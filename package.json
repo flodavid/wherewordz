@@ -1,0 +1,11 @@
+{
+  "name": "wherewordz-bot",
+  "version": "0.1.0",
+  "description": "Bot to play a game inspired by Werewords",
+  "main": "app.js",
+  "author": "flodavid",
+  "license": "ISC",
+  "dependencies": {
+    "discord.io": "github:izy521/discord.io"
+  }
+}
