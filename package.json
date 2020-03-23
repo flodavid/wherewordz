@@ -6,6 +6,7 @@
   "author": "flodavid",
   "license": "ISC",
   "dependencies": {
-    "discord.io": "github:izy521/discord.io"
+    "discord.io": "github:izy521/discord.io",
+    "random-words": "^1.1.0"
   }
 }
