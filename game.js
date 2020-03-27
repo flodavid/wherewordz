@@ -237,8 +237,13 @@ class Game {
     this.playing = true;
     this.start = Date.now();
     clearTimeout(this.timerId);
-    this.timerId = setTimeout(this.messageCallback, this.remaining, this.channelID);
+    this.timerId = setTimeout(this.messageCallback, this.remaining, this);
   };
+
+  tryPutToAnEnd() {
+    this.playing = false;
+    this.started = false;
+  }
   
   remainingTime() {
     return this.remaining

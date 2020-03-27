@@ -185,51 +185,58 @@ function tryRevealWerewolfAndSeer(game) {
  * @param {string} channelID ID of the channel where the messages will be sent
  * TODO put the 1 minute timer part in the Game class
  */
-function finishedGameCallback(channelID) {
+function finishedGameCallback(game) {
   bot.sendMessage({
-    to: channelID,
+    to: game.getChannelID(),
     message: "Time's up Esmeralda. Drop the mic.\n" +
       "You now have one more minute to find the GarouWolf"
   });
 
-  // Leave one minute (66s in fact) for the players to decide who is the werewolf
+  // Leave one minute (60 + 4 s in fact) for the players to decide who is the werewolf
   this.timerId = setTimeout(function () {
     bot.sendMessage({
-      to: channelID,
+      to: game.getChannelID(),
       message: "STOP! Type who you think is the werewolf, **NOW**"
     });
     // Add final countdown
     var countdown = 4;
-    let countdownInterval = setInterval(function (channel) {
+    let countdownInterval = setInterval(function () {
       countdown--;
       if (countdown > 0) {
         bot.sendMessage({
-          to: channel,
+          to: game.getChannelID(),
           message: countdown
         });
       }
       else {
         bot.sendMessage({
-          to: channel,
+          to: game.getChannelID(),
           message: "0!!!"
         });
         clearInterval(countdownInterval);
+        game.tryPutToAnEnd();
       }
-    }, 1000, channelID);
+    }, 1000);
   }, 60 * 1000);
+
 }
 
 /**
  * Start a game of a channel
  * @param {string} channelID Channel where the game should be played
+ * 
  */
-function start(channelID) {
+function start(channelID, time) {
   console.log("Trying to start the game in " + channelID);
   let game = findOrCreateGame(channelID);
   // The game won't be started if it has just been created
   if (game.isStarted()) {
     console.log("Game already started");
-    bot.sendMessage({ to: channelID, message: "Please wait for the current game to finish" });
+    if (game.remainingTime() <= 0) {
+      bot.sendMessage({ to: channelID, message: "Please wait for the final phase to finish" });
+    } else {
+      bot.sendMessage({ to: channelID, message: "Please wait for the current game to finish" });
+    }
   } else {
     console.log("Trying to start the game if everything is set up");
     
@@ -264,7 +271,7 @@ function start(channelID) {
             "You can ask 36 Yes/No questions to the mayor to find the word and/or the werewolf."
         });
         // Start the game if everything is okay
-        startGame(game);
+        startGame(game, time);
       }
     }
 
@@ -274,32 +281,22 @@ function start(channelID) {
 /**
  * Try to start the game if it has enough players
  * @param {Game} game Game that should start
- * @param {string} channelID Channel where messages are sent
+ * @param {number} duration Number of minutes of the game
  */
-function startGame(game, channelID) {
-  let gameStarted = game.tryStart(finishedGameCallback);
+function startGame(game, duration) {
+  let gameStarted;
+  if (isNaN(duration)) gameStarted = game.tryStart(finishedGameCallback);
+  else gameStarted = game.tryStart(finishedGameCallback, duration);
   // The game may have not started ff there are not enough players
   if (!gameStarted) {
     console.log("Game could not start");
     bot.sendMessage({
-      to: channelID,
+      to: game.getChannelID(),
       message: "Not enough players to start the game"
     });
   } else {
-    let countdown = 5;
     console.log("Game starting...");
-    let countdownInterval = setInterval(function() {
-      countdown--;
-      if (countdown > 0) {
-        bot.sendMessage({
-          to: channelID,
-          message: countdown
-        });
-      } else {
-        showTimeLeft(game);
-        clearInterval(countdownInterval);
-      }
-    }, 1000);
+    showTimeLeft(game);
   }
 }
 
@@ -309,15 +306,22 @@ function startGame(game, channelID) {
  */
 function showTimeLeft(game) {
   if (!game.isStarted()) {
-    bot.sendMessage({ to: game.getChannelID(), message: "Wait for the current game to finish" });
-  } else {
-    var minutes = Math.floor((game.remainingTime() % (1000 * 60 * 60)) / (1000 * 60));
-    var seconds = Math.floor((game.remainingTime() % (1000 * 60)) / 1000);
-    
     bot.sendMessage({
       to: game.getChannelID(),
-      message: "**You have " + minutes + " minutes and " + seconds +" seconds left...**"
+      message: "Game not started yet (or finished and is ready to restart)"
     });
+  } else {
+    if (game.remainingTime() <= 0) {
+      bot.sendMessage({ to: game.getChannelID(), message: "*Final phase*" });
+    } else {
+      var minutes = Math.floor((game.remainingTime() % (1000 * 60 * 60)) / (1000 * 60));
+      var seconds = Math.floor((game.remainingTime() % (1000 * 60)) / 1000);
+      
+      bot.sendMessage({
+        to: game.getChannelID(),
+        message: "**You have " + minutes + " minutes and " + seconds +" seconds left...**"
+      });
+    }
   }
 }
 
@@ -384,28 +388,32 @@ function handlePublicMessage(user, userID, channelID, message, event) {
 
   if (message.startsWith('$')) {
 
-    switch (message) {
+    let command = message.replace(/ .*/,'').slice(1);
+    let arg = message.replace(/.* /,'');
+    console.log("Command: " + command);
+    switch (command) {
 
-      case "$join":
+      case "join":
         addPlayers(findOrCreateGame(channelID), user, userID);
         break;
-      case "$distribute":
+      case "distribute":
         tryDistribute(findOrCreateGame(channelID), channelID, false);
         break;
-      case "$election":
+      case "election":
         tryDistribute(findOrCreateGame(channelID), channelID, true);
         break;
-      case "$fakegame":
+      case "fakegame":
         let gameF = findOrCreateGame(channelID);
         addPlayer(gameF, user, userID);
         tryDistribute(findOrCreateGame(channelID), channelID, true);
         addPlayer(gameF, "Tata", "Tata");
         addPlayer(gameF, "Toto", "Toto");
         break;
-      case "$start":
-        start(channelID);
+      case "start":
+        console.log("Starting game with duration: " + parseInt(arg))
+        start(channelID, parseInt(arg));
         break;
-      case "$pause":
+      case "pause":
         let gameP = findOrCreateGame(channelID);
         showTimeLeft(gameP);
         bot.sendMessage({
@@ -414,7 +422,7 @@ function handlePublicMessage(user, userID, channelID, message, event) {
         });
         gameP.pause();
         break;
-      case "$resume":
+      case "resume":
         let gameR = findOrCreateGame(channelID);
         bot.sendMessage({
           to: channelID,
@@ -423,10 +431,10 @@ function handlePublicMessage(user, userID, channelID, message, event) {
         gameR.resume();
         showTimeLeft(gameR);
         break;
-      case "$time":
+      case "time":
         showTimeLeft(findOrCreateGame(channelID));
         break;
-      case "$stop":
+      case "stop":
         if (games.has(channelID)){
           let gameS = games.get(channelID)
           gameS.pause();
@@ -443,13 +451,13 @@ function handlePublicMessage(user, userID, channelID, message, event) {
           });
         }
         break;
-      case "$restore":
+      case "restore":
         if (lastSaveGame !== null) {
           lastSaveGame.setChannelID(channelID);
           games.set(channelID, lastSaveGame);
         }
         break;
-      case "$rules":
+      case "rules":
         bot.sendMessage({
           to: channelID,
           message: "**__Rules of the WhereWordz__**\n" +
@@ -466,11 +474,11 @@ function handlePublicMessage(user, userID, channelID, message, event) {
             "So both must be careful"
         });
         break;
-      case "$help":
+      case "help":
         bot.sendMessage({
           to: channelID,
           message: "Available commands are: join, distribute (or election), start, pause," +
-            " resume, time, rules, stop (and help ;))."
+            " resume, time, rules, stop, restore (and help ;))."
         });
         break;
     }
