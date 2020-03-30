@@ -1,11 +1,14 @@
+const DEFAULT_DURATION = 6;
+const QUESTION_NB = 30;
+
 /**
  * Store a game data and logic
  * No message is printed to the user from this class
  */
 class Game {
   /**
-   * 
-   * @param {*} callback Function that will be called at the end of the game
+   * Constructor of a Game
+   * @param {string} channelID Discord ChannelID where the game is to be played
    */
   constructor(channelID) {
     this.channelID = channelID;
@@ -53,9 +56,18 @@ class Game {
     return this.secretWord;
   }
 
+  getQuestionsLeft() {
+    return this.nbQuestionsLeft;
+  }
+
+  /**
+   * Randomly insert the user into the villagers array
+   * @param {string} user  Discor UserID of the player to insert as villager
+   */
   randomInsertVillager(user) {
     let playerIndex = Math.floor(Math.random() * (this.villagers.length + 1));
-    console.log("randomInsertVillager> Randomly add the user '" + user + "' to villagers (" + this.villagers +")," +
+    console.log("randomInsertVillager> Randomly add the user '" + user +
+      "' to villagers (" + this.villagers +")," +
       " may become a werewolf, not a mayor. Index: " + playerIndex);
     // Add the user, removing 0 other villager
     this.villagers.splice(playerIndex, 0, user)
@@ -65,6 +77,7 @@ class Game {
   /**
    * Try to add a user to the game
    * @param {*} user User details (username, userID, ...)
+   * @returns true if the user was successfully added
    */
   tryAddUser(user) {
     if (this.started) {
@@ -89,6 +102,7 @@ class Game {
 
   /**
    * Create a copy of the users, shuffled
+   * @returns the array of shuffled users
    */
   shuffleUsers() {
     // Copy array before randomizing it
@@ -111,53 +125,84 @@ class Game {
   }
 
   /**
-   * First initialization to do
+   * Tells wether a player is the mayor of the game or not
+   * @param {string} userID Discord UserID of the player
+   * @returns true if the player is indeed the mayor of the game
+   */
+  isMayor(userID) {
+    return this.mayor !== null && this.mayor === userID;
+  }
+
+  /**
+   * Check if a game has started
+   * @returns true if it has started
+   */
+  isStarted() {
+    return this.started;
+  }
+
+  /**
+   * Check if the mayor has been initialized
+   * @returns true if the mayor is set
+   */
+  hasMayor() {
+    return this.mayor !== null;
+  }
+
+  /**
+   * Check if the secret word has been initialized
+   * @returns true if the secret word is set
+   */
+  hasSecretWord() {
+    return this.secretWord !== null;
+  }
+
+  /**
+   * Check if the players can still ask questions
+   * @returns true there is at least one question left to ask
+   */
+  hasQuestionsLeft() {
+    return this.nbQuestionsLeft > 0;
+  }
+
+
+  /**
+   * Try to set the mayor
+   * @returns the mayor selected, null if there is no player in the game
    */
   tryInitMayor() {
     if (this.users.length < 1) {
       console.log("Need at least one player to init mayor");
       return null;
     } else {
+      // Reset the secret word to be selected later by the new mayer
+      this.secretWord = null;
+
+      // Select mayor randomly
       console.log("Initializing the mayor randomly");
-
-      // Randomize the users order and set them as villager by default
-      this.villagers = this.shuffleUsers();
-      // Select the first as mayor and remove it
-      this.mayor = this.villagers.shift();
-
+      let mayorIndex = Math.floor(Math.random() * this.users.length);
+      this.mayor = this.users[mayorIndex];
       return this.mayor;
     }
-  }
-
-  /**
-   * Tells wether a player is the mayor of the game or not
-   * @param {string} userID Discord UserID of the player
-   */
-  isMayor(userID) {
-    return this.mayor != null && this.mayor === userID;
-  }
-
-  hasMayor() {
-    return this.mayor !== null;
-  }
-
-  hasSecretWord() {
-    return this.secretWord !== null;
   }
 
   /**
    * Second/third initialization to do
    * If there is already a werewolf, it is put back to the villagers and may be
    * selected again
+   * @returns the werewolf selected. null if it failed
    */
   tryInitWerewolf() {
-    console.log("tryInitWerewolf> Villagers: " + this.villagers)
-    if (this.villagers.length < 1) {
-      console.log("Need at least two players to init werewolf");
+    if (this.users.length < 2) {
+      console.log("Need at least two players to init werewolf and seer");
       return null;
     } else {
-      // Put back the old werewolf to the p
-      if (this.werewolf !== null) {
+      // Check if werewolf (and villagers) have already been initialized
+      if (this.werewolf === null) {
+        // Randomize the users order and consider them as villager by default
+        this.villagers = this.shuffleUsers();
+      } else {
+        // Put back the old werewolf to the villagers
         this.randomInsertVillager(this.werewolf);
       }
       console.log("Selecting the first villager as werewolf");
@@ -173,11 +218,11 @@ class Game {
 
   /**
    * Second/third initialization to do
+   * @returns the seer selected. null if it failed
    */
   tryInitSeer() {
-    console.log("tryInitSeer> Villagers: " + this.villagers)
-    if (this.villagers.length < 1) {
-      console.log("Need at least thee players to init seer");
+    if (this.users.length < 2) {
+      console.log("Need at least two players to init seer and werewolf");
       return null;
     } else {
       console.log("Selecting the first villager as seer");
@@ -191,27 +236,43 @@ class Game {
   }
 
 
-  hasWordBeenChosen(message) {
-    if (this.secretWord === null) {
+  /**
+   * Try to set the given message has 
+   * @param {string} message 
+   * @returns false if the secret word has already been set or the given one is empty
+   */
+  trySelectWord(message) {
+    if (this.secretWord !== null) {
+      return false;
+    } else {
       this.secretWord = message.trim();
-      console.log("The secret word has been set to: "+ this.secretWord);
-      return true;
-    } else return false;
+      if (this.secretWord === null || this.secretWord === "") {
+        this.secretWord = null;
+        return false;
+      } else {
+        console.log("The secret word has been set to: "+ this.secretWord);
+        return true;
+      }
+    }
   }
 
   /**
    * Start the game. It should have been initialized before
    * @param {function} callback Function that will be called once the game has ended
    * @param {number} duration Duration of the game, in minutes. 6 minutes by default
+   * @param {number} questions Maximum number of questions allowed for the players to ask
+   * @returns true if their are enough players and roles have been distributed
    */
-  tryStart(callback, duration = 6) {
+  tryStart(callback, duration = DEFAULT_DURATION, questions = QUESTION_NB) {
     this.remaining = duration * 1000 * 60 + 500;
-    if (this.users.length < 3) {
-      console.log("Not enough users, not starting");
+    if (this.users.length < 3
+      || this.mayor ===null || this.werewolf === null || this.seer === null) {
+      console.log("Not enough users or not initialized, not starting");
       return false;
     } else {
       this.messageCallback = callback;
       this.started = true;
+      this.nbQuestionsLeft = questions;
 
       // Start the timer
       this.resume();
@@ -219,12 +280,9 @@ class Game {
     }
   }
 
-  isStarted() {
-    return this.started;
-  }
-
   /**
-   * 
+   * Pause a game that has been started and is being played
+   * Store the time left to be able to restart the game with the same amount
    */
   pause() {
     this.playing = false;
@@ -232,6 +290,9 @@ class Game {
     this.remaining -= Date.now() - this.start;
   };
 
+  /**
+   * Resume a game that has been paused or just initialized and not started
+   */
   resume() {
     console.log("Resuming the game");
     this.playing = true;
@@ -240,11 +301,38 @@ class Game {
     this.timerId = setTimeout(this.messageCallback, this.remaining, this);
   };
 
-  tryPutToAnEnd() {
+  /**
+   * Stop a game, that is started and/or playing or not
+   */
+  putToAnEnd() {
+    clearTimeout(this.timerId);
     this.playing = false;
     this.started = false;
   }
+
+  /**
+   * Inform the game that a question has been asked
+   * @returns true if the question has been taken into account
+   */
+  tryAskQuestion() {
+    if (this.playing) {
+      -- this.nbQuestionsLeft;
+      if (this.nbQuestionsLeft <= 0) {
+        // Unset timer
+        clearTimeout(this.timerId);
+        this.remaining = null;
+        
+        // Start the finale phase of the game
+        this.messageCallback.call(null, this);
+      }
+      return this.nbQuestionsLeft;
+    } else return -1;
+  }
   
+  /**
+   * Give the remaining time of the game
+   * @returns the time left as a date
+   */
   remainingTime() {
     return this.remaining
       ? this.start + this.remaining - Date.now()

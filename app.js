@@ -68,6 +68,7 @@ function addPlayer(game, user, userID) {
  */
 function tryDistribute(game, channelID, keepMayor = false) {
   // Set mayor if needed
+  let mayor;
   if (!game.hasMayor() || !keepMayor) {
     if (game.hasMayor()) {
       bot.sendMessage({
@@ -75,10 +76,11 @@ function tryDistribute(game, channelID, keepMayor = false) {
         message: "Choosing a new Mayor... The old one was not good enough"
       });
     }
-    let mayor = game.tryInitMayor();
+    mayor = game.tryInitMayor();
+  } else {
+    mayor = game.getMayor();
   }
 
-  let mayor = game.getMayor();
   console.log("Mayor is: " + mayor);
 
   bot.sendMessage({
@@ -94,26 +96,37 @@ function tryDistribute(game, channelID, keepMayor = false) {
     });
     return false;
   } else {
-    console.log("Mayor has been elected");
+    console.log("Mayor was elected");mayor
 
+    // Inform everyone about the mayor and ask them the secret word
     bot.sendMessage({
       to: channelID,
       message: "Mayor is: <@" + mayor + ">. They must choose a word"
+    });
+    let word1 = randomWords(); let word2 = randomWords(); let word3 = randomWords();
+    bot.sendMessage({
+      to: mayor,
+      message: "You are the Mayor. Please choose between: " +
+        word1 + ", " + word2 + " and " + word3 + ". Send me back the word you chose\n" +
+        "You can cheat, but that's on you"
     });
 
     // Choose a werewolf
     let werewolf = game.tryInitWerewolf();
     bot.sendMessage({
       to: werewolf,
-      message: "You are a werewolf. The secret word will be revealed to you when chosen"
+      message: "You are a Werewolf. The secret word will be revealed to you when chosen"
     });
     
     // Choose a seer
     let seer = game.tryInitSeer();
     bot.sendMessage({
       to: seer,
-      message: "You are a seer. The secret word will be revealed to you when chosen"
+      message: "You are a Seer. The secret word will be revealed to you when chosen"
     });
+
+    // Abandon if the initialization didn't go well
+    if (werewolf === null || seer === null) return false;
 
     // Telling other players they are villagers
     game.getVillagers().forEach(function(userID, index, array){
@@ -123,16 +136,7 @@ function tryDistribute(game, channelID, keepMayor = false) {
       });
     });
 
-    let word1 = randomWords();
-    let word2 = randomWords();
-    let word3 = randomWords();
-    bot.sendMessage({
-      to: mayor,
-      message: "You are the Mayor. Please choose between: " +
-        word1 + ", " + word2 + " and " + word3 + ". Send me back the word you chose\n" +
-        "You can cheat, but that's on you"
-    });
-    return werewolf !==null && seer !== null;
+    return true;
   }
 }
 
@@ -141,8 +145,10 @@ function tryDistribute(game, channelID, keepMayor = false) {
  * @param {Game} game Game that where we want to reveal the werewolf
  */
 function tryRevealWerewolfAndSeer(game) {
+  console.log("Trying to reveal werewolf and seer in channel: " + game.getChannelID());
   let werewolf = game.getWerewolf();
   if (werewolf === null) {
+    console.log("Unable to reveal, no werewolf");
     bot.sendMessage({
       to: game.getChannelID(),
       message: "We need a werewolf to play. Is there enough players ?"
@@ -151,6 +157,7 @@ function tryRevealWerewolfAndSeer(game) {
   } else {
     let seer = game.getSeer();
     if (seer === null) {
+      console.log("Unable to see, no seer");
       bot.sendMessage({
         to: game.getChannelID(),
         message: "We need a seer to play, not enough players"
@@ -159,7 +166,7 @@ function tryRevealWerewolfAndSeer(game) {
       /*
       All roles are distributed, we can start the game
       */
-      console.log("Werewolf has revealed. Seer has seen!");
+      console.log("Werewolf and Seer revealed");
       bot.sendMessage({
         to: game.getChannelID(),
         message: "Werewolf has revealed. Seer has seen!"
@@ -182,18 +189,27 @@ function tryRevealWerewolfAndSeer(game) {
 
 /**
  * Function called once the timer has ended to announce to the players
- * @param {string} channelID ID of the channel where the messages will be sent
+ * @param {Game} game Game that has finished and called the function 
  * TODO put the 1 minute timer part in the Game class
  */
 function finishedGameCallback(game) {
-  bot.sendMessage({
-    to: game.getChannelID(),
-    message: "Time's up Esmeralda. Drop the mic.\n" +
-      "You now have one more minute to find the GarouWolf"
-  });
+  // Specific message depending one why the game ended
+  if (game.hasQuestionsLeft()) {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "No more questions. Casimodo rang the bell.\n" +
+        "You now have one more minute to find the GarouWolf"
+    });
+  } else {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "Time's up Esmeralda. Drop the mic.\n" +
+        "You now have one more minute to find the GarouWolf"
+    });
+  }
 
   // Leave one minute (60 + 4 s in fact) for the players to decide who is the werewolf
-  this.timerId = setTimeout(function () {
+  let lastMinTimerId = setTimeout(function () {
     bot.sendMessage({
       to: game.getChannelID(),
       message: "STOP! Type who you think is the werewolf, **NOW**"
@@ -214,7 +230,7 @@ function finishedGameCallback(game) {
           message: "0!!!"
         });
         clearInterval(countdownInterval);
-        game.tryPutToAnEnd();
+        game.putToAnEnd();
       }
     }, 1000);
   }, 60 * 1000);
@@ -224,9 +240,11 @@ function finishedGameCallback(game) {
 /**
  * Start a game of a channel
  * @param {string} channelID Channel where the game should be played
- * 
+ * @param {number} time Number of minutes for the game to last
+ * @param {number} questions Number of questions maximum for the game
+ * TODO Check if game is paused and either propose to resume or resume the game
  */
-function start(channelID, time) {
+function start(channelID, time, questions) {
   console.log("Trying to start the game in " + channelID);
   let game = findOrCreateGame(channelID);
   // The game won't be started if it has just been created
@@ -264,14 +282,15 @@ function start(channelID, time) {
             " to reveal and seer to see. *use $distribute to have a new mayor*"
         });
       } else {
+        //TODO distribute roles if there is no Werewolf or Seer
         console.log("Starting the game");
         bot.sendMessage({
           to: channelID,
           message: "Starting the game with " + game.getPlayers().length +" players\n" +
-            "You can ask 36 Yes/No questions to the mayor to find the word and/or the werewolf."
+            "You can ask " + questions + " Yes/No questions to the mayor to find the word and/or the werewolf."
         });
         // Start the game if everything is okay
-        startGame(game, time);
+        startGame(game, time, questions);
       }
     }
 
@@ -282,11 +301,13 @@ function start(channelID, time) {
  * Try to start the game if it has enough players
  * @param {Game} game Game that should start
  * @param {number} duration Number of minutes of the game
+ * @param {number} questions Number of questions allowed for the game
  */
-function startGame(game, duration) {
+function startGame(game, duration, questions) {
   let gameStarted;
   if (isNaN(duration)) gameStarted = game.tryStart(finishedGameCallback);
-  else gameStarted = game.tryStart(finishedGameCallback, duration);
+  else if (isNaN(questions)) gameStarted = game.tryStart(finishedGameCallback, duration);
+  else gameStarted = game.tryStart(finishedGameCallback, duration, questions);
   // The game may have not started ff there are not enough players
   if (!gameStarted) {
     console.log("Game could not start");
@@ -326,6 +347,68 @@ function showTimeLeft(game) {
 }
 
 /**
+ * 
+ * @param {Game} game Game running in the channel the answer was posted
+ */
+function answerRightTo(game) {
+  console.log("Answering 'right' to game in channel:" + game.getChannelID());
+  let questionsLeft = game.tryAskQuestion();
+  if (questionsLeft >= 0) {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "The answer to your question is **YES** (" + questionsLeft + " left)"
+    });
+  } else {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "The answer to your question is **YES**. This was your last question"
+    });
+  }
+
+}
+
+/**
+ * 
+ * @param {Game} game Game running in the channel the answer was posted
+ */
+function answerWrongTo(game) {
+  console.log("Answering 'wrong' to game in channel:" + game.getChannelID());
+  let questionsLeft = game.tryAskQuestion();
+  if (questionsLeft >= 0) {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "The answer to your question is **NO** (" + questionsLeft + " left)"
+    });
+  } else {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "The answer to your question is **NO**. No question left"
+    });
+  }
+
+}
+
+/**
+ * 
+ * @param {Game} game Game running in the channel the answer was posted
+ */
+function answerFarTo(game) {
+  console.log("Answering 'far' to game in channel:" + game.getChannelID());
+  let questionsLeft = game.tryAskQuestion();
+  if (questionsLeft >= 0) {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "Sorry, but your question is far from the secret word (" + questionsLeft + " left)"
+    });
+  } else {
+    bot.sendMessage({
+      to: game.getChannelID(),
+      message: "Sorry, but your question is far from the secret word and you have no question left"
+    });
+  }
+}
+
+/**
  * Handle a message sent in private to the bot
  * @param {string} user Discord username of the sender
  * @param {string} userID Discord UserID of the sender
@@ -335,7 +418,7 @@ function showTimeLeft(game) {
 function handlePrivateMessage(user, userID, message, event) {
   console.log("I got a private message from: " + user);
   
-  // Search on all games to find the first one concerned
+  // Search on all games to find the first one concerned (user is mayor)
   const gameValues = games.values();
   let gameIt;
   do {
@@ -351,7 +434,7 @@ function handlePrivateMessage(user, userID, message, event) {
         " You should only send me direct message if I asked you a question first"
     });
   } else {
-    if (game.hasWordBeenChosen(message)){
+    if (game.trySelectWord(message)){
       // Confirmation to mayor
       bot.sendMessage({
         to: userID,
@@ -386,13 +469,44 @@ function handlePublicMessage(user, userID, channelID, message, event) {
     });
   }
 
-  if (message.startsWith('$')) {
+  // Check if the message is an answer to a question by a mayor
+  let game;
+  if (games.has(channelID)) {
+    game = games.get(channelID);
+    // Reset the game if the message must not be treated as an answer
+    if (!game.isMayor(userID) || !game.isStarted()) {
+      game = null;
+    }   
+  } else game = null;
+  // If a game has been initialized, we must interpret the mayor answer
+  if (game !== null) {
+    console.log("Message is a mayor answer");
+    switch (message) {
+      case "👍":
+        answerRightTo(game);
+        break;
+      case "👎":
+        answerWrongTo(game);
+        break;
+      case "🚫": // :negative_squared_cross_mark:
+      case "❌": // :x:
+      case "❎": // :no_entry_sign:
+      case "⛔": // :no_entry:
+        answerFarTo(game);
+        break;
+      default:
+        game=null;
+        console.log("Message was not a mayor answer");
+    }
+  }
 
+  if (game === null && message.startsWith('$')) {
     let command = message.replace(/ .*/,'').slice(1);
-    let arg = message.replace(/.* /,'');
+    let arg1 = message.replace(/.* /,'');
+    let arg2 = arg1.replace(/.* /,'');
+    arg1 = arg1.replace(/ .*/,'');
     console.log("Command: " + command);
     switch (command) {
-
       case "join":
         addPlayers(findOrCreateGame(channelID), user, userID);
         break;
@@ -403,15 +517,15 @@ function handlePublicMessage(user, userID, channelID, message, event) {
         tryDistribute(findOrCreateGame(channelID), channelID, true);
         break;
       case "fakegame":
-        let gameF = findOrCreateGame(channelID);
-        addPlayer(gameF, user, userID);
+        game = findOrCreateGame(channelID);
+        addPlayer(game, user, userID);
         tryDistribute(findOrCreateGame(channelID), channelID, true);
-        addPlayer(gameF, "Tata", "Tata");
-        addPlayer(gameF, "Toto", "Toto");
+        addPlayer(game, "Tata", "Tata");
+        addPlayer(game, "Toto", "Toto");
         break;
       case "start":
-        console.log("Starting game with duration: " + parseInt(arg))
-        start(channelID, parseInt(arg));
+        console.log("Starting game with duration: " + parseInt(arg1))
+        start(channelID, parseInt(arg1), parseInt(arg2));
         break;
       case "pause":
         let gameP = findOrCreateGame(channelID);
@@ -463,7 +577,7 @@ function handlePublicMessage(user, userID, channelID, message, event) {
           message: "**__Rules of the WhereWordz__**\n" +
             ">>> - You need at least 4 players (3 will do, but meh)\n" +
             "- The *Mayor* chooses the word\n" +
-            "- You can ask 36 Yes/No questions to the *Mayor* to find the word and/or the *Werewolf*\n" +
+            "- You can ask Yes/No questions to the *Mayor* (30 by default) to find the word and/or the *Werewolf*\n" +
             "- The *Werewolf* knows the word and must keep the *Villagers* from finding it\n" +
             "- The *Seer* knows the word and must help the *Villagers*\n" +
             "- The *Mayor* CAN be the *Werewolf* or *Seer*\n" +
@@ -477,8 +591,10 @@ function handlePublicMessage(user, userID, channelID, message, event) {
       case "help":
         bot.sendMessage({
           to: channelID,
-          message: "Available commands are: join, distribute (or election), start, pause," +
-            " resume, time, rules, stop, restore (and help ;))."
+          message: "Available commands are: join, distribute (or election), start [T] [Q], pause," +
+            " resume, time, rules, stop, restore (and help ;)).\n" + 
+            "The mayor can answer questions with :thumbsup: or :thumbsdown:" +
+            " or :no_entry:/:no_entry_sign:/:x:/:negative_squared_cross_mark:"
         });
         break;
     }
