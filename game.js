@@ -20,6 +20,8 @@ class Game {
     this.users = [];
     this.villagers = null;
     this.mayor = null;
+    this.werewolf = null;
+    this.seer = null;
     this.secretWord = null;
     this.messageCallback = null;
   }
@@ -76,24 +78,24 @@ class Game {
 
   /**
    * Try to add a user to the game
-   * @param {*} user User details (username, userID, ...)
+   * @param {string} userID Discord UserID of the user to add
    * @returns true if the user was successfully added
    */
-  tryAddUser(user) {
+  tryAddUser(userID) {
     if (this.started) {
       console.log("tryAddUser> Cannot add user, game started");
       return false;
     } else {
-      if (this.users.includes(user)) {
-        console.log("tryAddUser> Cannot add user, already in: "+ user);
+      if (this.users.includes(userID)) {
+        console.log("tryAddUser> Cannot add user, already in: "+ userID);
         return false;
       } else {
-        // If there are already villagers, the player is added randomly to them
+        // If there already are villagers, the player is added randomly to them
         if (this.villagers !== null) {
-          this.randomInsertVillager(user);
+          this.randomInsertVillager(userID);
         }
         
-        this.users.push(user);
+        this.users.push(userID);
         console.log("tryAddUser> User added");
         return true; 
       }

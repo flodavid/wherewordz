@@ -1,4 +1,3 @@
-// import { Game } from 'game.js'
 var Game = require('./game.js');
 var Discord = require('discord.io');
 const jsonToken = require('./token.json');
@@ -415,7 +414,7 @@ function answerFarTo(game) {
  * @param {string} message Content of the message
  * @param {*} event 
  */
-function handlePrivateMessage(user, userID, message, event) {
+function handleDirectMessage(user, userID, message, event) {
   console.log("I got a private message from: " + user);
   
   // Search on all games to find the first one concerned (user is mayor)
@@ -495,7 +494,7 @@ function handlePublicMessage(user, userID, channelID, message, event) {
         answerFarTo(game);
         break;
       default:
-        game=null;
+        game = null;
         console.log("Message was not a mayor answer");
     }
   }
@@ -522,37 +521,38 @@ function handlePublicMessage(user, userID, channelID, message, event) {
         tryDistribute(findOrCreateGame(channelID), channelID, true);
         addPlayer(game, "Tata", "Tata");
         addPlayer(game, "Toto", "Toto");
+        tryDistribute(findOrCreateGame(channelID), channelID, false);
         break;
       case "start":
         console.log("Starting game with duration: " + parseInt(arg1))
         start(channelID, parseInt(arg1), parseInt(arg2));
         break;
       case "pause":
-        let gameP = findOrCreateGame(channelID);
-        showTimeLeft(gameP);
+        game = findOrCreateGame(channelID);
+        showTimeLeft(game);
         bot.sendMessage({
           to: channelID,
           message: "Pausing the game"
         });
-        gameP.pause();
+        game.pause();
         break;
       case "resume":
-        let gameR = findOrCreateGame(channelID);
+        game = findOrCreateGame(channelID);
         bot.sendMessage({
           to: channelID,
           message: "Resuming the game"
         });
-        gameR.resume();
-        showTimeLeft(gameR);
+        game.resume();
+        showTimeLeft(game);
         break;
       case "time":
         showTimeLeft(findOrCreateGame(channelID));
         break;
       case "stop":
         if (games.has(channelID)){
-          let gameS = games.get(channelID)
-          gameS.pause();
-          lastSaveGame = gameS;
+          game = games.get(channelID)
+          game.pause();
+          lastSaveGame = game;
           games.delete(channelID);
           bot.sendMessage({
             to: channelID,
@@ -597,6 +597,23 @@ function handlePublicMessage(user, userID, channelID, message, event) {
             " or :no_entry:/:no_entry_sign:/:x:/:negative_squared_cross_mark:"
         });
         break;
+      case "state":
+        if (games.has(channelID)) {
+          game = games.get(channelID);
+          bot.sendMessage({
+            to: userID,
+            message: "Message event: " + JSON.stringify(event) + ".\nGame is: " + JSON.stringify(game)
+          });
+        } else {
+          bot.sendMessage({
+            to: userID,
+            message: "No game in this channel"
+          });
+        }
+        bot.deleteMessage({
+          channelID: channelID,
+          messageID: event.d.id
+      });
     }
   }
 }
@@ -609,7 +626,7 @@ bot.on('message', function(user, userID, channelID, message, event) {
   bot.createDMChannel(userID, function(err, res) {
     // Check if it is private message
     if (typeof res !== 'undefined' && res.id === channelID) {
-      handlePrivateMessage(user, userID, message, event);
+      handleDirectMessage(user, userID, message, event);
     } else {
       handlePublicMessage(user, userID, channelID, message, event);
     }
